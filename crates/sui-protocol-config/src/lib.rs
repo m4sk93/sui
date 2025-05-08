@@ -701,6 +701,10 @@ struct FeatureFlags {
     // Allow objects created or mutated in system transactions to exceed the max object size limit.
     #[serde(skip_serializing_if = "is_false")]
     allow_unbounded_system_objects: bool,
+
+    // Signifies the cut-over of using type tags instead of `Type`s in the object runtime.
+    #[serde(skip_serializing_if = "is_false")]
+    type_tags_in_object_runtime: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -2029,6 +2033,10 @@ impl ProtocolConfig {
                 && addr.aliased == signer
                 && addr.allowed_tx_digests.contains(tx_digest)
         })
+    }
+
+    pub fn type_tags_in_object_runtime(&self) -> bool {
+        self.feature_flags.type_tags_in_object_runtime
     }
 }
 
@@ -3676,6 +3684,7 @@ impl ProtocolConfig {
                     if chain != Chain::Mainnet && chain != Chain::Testnet {
                         cfg.feature_flags.enable_party_transfer = true;
                     }
+                    cfg.feature_flags.type_tags_in_object_runtime = true;
                 }
                 // Use this template when making changes:
                 //
