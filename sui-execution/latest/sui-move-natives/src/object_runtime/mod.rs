@@ -1,6 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+pub(crate) mod accumulator;
 mod fingerprint;
 pub(crate) mod object_store;
 
@@ -46,6 +47,8 @@ use sui_types::{
 };
 use tracing::error;
 
+pub use accumulator::*;
+
 pub enum ObjectEvent {
     /// Transfer to a new address or object. Or make it shared or immutable.
     Transfer(Owner, MoveObject),
@@ -78,6 +81,7 @@ pub struct LoadedRuntimeObject {
 pub struct RuntimeResults {
     pub writes: IndexMap<ObjectID, (Owner, Type, Value)>,
     pub user_events: Vec<(Type, StructTag, Value)>,
+    pub accumulator_events: Vec<MoveAccumulatorEvent>,
     // Loaded child objects, their loaded version/digest and whether they were modified.
     pub loaded_child_objects: BTreeMap<ObjectID, LoadedRuntimeObject>,
     pub created_object_ids: Set<ObjectID>,
@@ -95,6 +99,7 @@ pub(crate) struct ObjectRuntimeState {
     // TODO these struct tags can be removed if type_to_type_tag was exposed in the session
     transfers: IndexMap<ObjectID, (Owner, Type, Value)>,
     events: Vec<(Type, StructTag, Value)>,
+    accumulator_events: Vec<MoveAccumulatorEvent>,
     // total size of events emitted so far
     total_events_size: u64,
     received: IndexMap<ObjectID, DynamicallyLoadedObjectMetadata>,
@@ -179,6 +184,7 @@ impl<'a> ObjectRuntime<'a> {
                 deleted_ids: Set::new(),
                 transfers: IndexMap::new(),
                 events: vec![],
+                accumulator_events: vec![],
                 total_events_size: 0,
                 received: IndexMap::new(),
             },
@@ -324,6 +330,25 @@ impl<'a> ObjectRuntime<'a> {
 
     pub fn take_user_events(&mut self) -> Vec<(Type, StructTag, Value)> {
         std::mem::take(&mut self.state.events)
+    }
+
+    pub fn emit_accumulator_event(
+        &mut self,
+        accumulator_id: ObjectID,
+        action: MoveAccumulatorAction,
+        target_addr: AccountAddress,
+        target_ty: Type,
+        value: MoveAccumulatorValue,
+    ) -> PartialVMResult<()> {
+        let event = MoveAccumulatorEvent {
+            accumulator_id,
+            action,
+            target_addr,
+            target_ty,
+            value,
+        };
+        self.state.accumulator_events.push(event);
+        Ok(())
     }
 
     pub(crate) fn child_object_exists(
@@ -563,6 +588,7 @@ impl ObjectRuntimeState {
             events: user_events,
             total_events_size: _,
             received,
+            accumulator_events,
         } = self;
 
         // Check new owners from transfers, reports an error on cycles.
@@ -612,6 +638,7 @@ impl ObjectRuntimeState {
         Ok(RuntimeResults {
             writes: written_objects,
             user_events,
+            accumulator_events,
             loaded_child_objects,
             created_object_ids: new_ids,
             deleted_object_ids: deleted_ids,
